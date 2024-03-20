@@ -110,6 +110,56 @@ public final class OneDimAveragingPhaser {
     public static void runParallelFuzzyBarrier(final int iterations,
             final double[] myNew, final double[] myVal, final int n,
             final int tasks) {
-        
+        Phaser[] phArr = new Phaser[tasks+2];
+        for(int i = 0; i < phArr.length; i++) {
+            phArr[i] = new Phaser(1);
+        }
+
+        Thread[] threads = new Thread[tasks];
+
+        for (int ii = 0; ii < tasks; ii++) {
+            final int i = ii;
+
+            threads[ii] = new Thread(() -> {
+                double[] threadPrivateMyVal = myVal;
+                double[] threadPrivateMyNew = myNew;
+
+                final int chunkSize = (n + tasks - 1) / tasks;
+                final int left = (i * chunkSize) + 1;
+                int right = (left + chunkSize) - 1;
+                if (right > n) right = n;
+
+                final int index = i+1;
+                for (int iter = 0; iter < iterations; iter++) {
+
+                    for (int j = left; j <= right; j++) {
+                        threadPrivateMyNew[j] = (threadPrivateMyVal[j - 1]
+                                + threadPrivateMyVal[j + 1]) / 2.0;
+                    }
+
+                    phArr[index].arrive();
+                    if(index > 1) {
+                        phArr[index-1].awaitAdvance(iter);
+                    }
+                    if(index < tasks) {
+                        phArr[index+1].awaitAdvance(iter);
+                    }
+                    double[] temp = threadPrivateMyNew;
+                    threadPrivateMyNew = threadPrivateMyVal;
+                    threadPrivateMyVal = temp;
+
+
+                }
+            });
+            threads[ii].start();
+        }
+
+        for (int ii = 0; ii < tasks; ii++) {
+            try {
+                threads[ii].join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
